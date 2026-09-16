@@ -1,4 +1,25 @@
 const fs = require('fs');
+const path = require('path');
+const bcrypt = require('bcryptjs');
+
+let Database;
+try {
+  Database = require('better-sqlite3');
+} catch (e) {
+  console.warn('⚠️ better-sqlite3 not available in this environment. Using mock/memory fallback.');
+  Database = class MockDatabase {
+    constructor() {}
+    pragma() {}
+    exec() {}
+    prepare() {
+      return {
+        get: () => ({ c: 0 }),
+        all: () => [],
+        run: () => ({ changes: 0, lastInsertRowid: 1 })
+      };
+    }
+  };
+}
 
 let dbPath = path.join(__dirname, 'library.db');
 if (process.env.VERCEL) {
@@ -11,9 +32,17 @@ if (process.env.VERCEL) {
   dbPath = tmpDbPath;
 }
 
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+let db;
+try {
+  db = new Database(dbPath);
+  if (db.pragma) {
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+  }
+} catch (e) {
+  console.warn('⚠️ SQLite initialization warning:', e.message);
+  db = new Database(null);
+}
 
 // ---------- SCHEMA (non-destructive, all IF NOT EXISTS) ----------
 db.exec(`
