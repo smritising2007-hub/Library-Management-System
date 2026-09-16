@@ -827,11 +827,16 @@ hr.rule{border:none;border-top:1px solid var(--line);margin:20px 0;}
   .sidebar-overlay{display:none!important;}
 }
 @media(max-width:540px){
-  .modal{padding:20px 16px 16px;}
-  .books-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
-  .stat-row{grid-template-columns:repeat(2,1fr);}
+  .modal{padding:18px 14px 14px;}
+  .books-grid{grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:12px;}
+  .stat-row{grid-template-columns:repeat(2,1fr);gap:10px;}
   .detail-grid{flex-direction:column;}
-  .modal .grid2{grid-template-columns:1fr;}
+  .modal .grid2, .modal .grid3{grid-template-columns:1fr;}
+  .main{padding:16px 12px;padding-top:60px;}
+}
+@media(max-width:380px){
+  .books-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;}
+  .stat-row{grid-template-columns:1fr;}
 }
 </style>
 </head>

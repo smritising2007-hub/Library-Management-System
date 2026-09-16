@@ -203,19 +203,44 @@ const LOAN_DAYS   = 14;   // default loan period
 const MAX_RENEWALS = 1;   // max renewals per loan
 
 // ---------- SEED (only if fresh database) ----------
-const userCount = db.prepare('SELECT COUNT(*) c FROM users').get().c;
-if (userCount === 0) {
-  const insertUser = db.prepare(
-    'INSERT INTO users (name,email,password,role,max_books,wallet_balance) VALUES (?,?,?,?,?,?)'
-  );
-  insertUser.run('Library Admin',  'admin@library.com',  bcrypt.hashSync('admin123',  8), 'admin',  999, 2500);
-  insertUser.run('Vinay Kumar',    'member@library.com', bcrypt.hashSync('member123', 8), 'member', 3,   1200);
+try {
+  const userCount = db.prepare('SELECT COUNT(*) c FROM users').get()?.c || 0;
+  if (userCount === 0) {
+    const insertUser = db.prepare(
+      'INSERT INTO users (name,email,password,role,max_books,wallet_balance) VALUES (?,?,?,?,?,?)'
+    );
+    insertUser.run('Library Admin',  'admin@library.com',  bcrypt.hashSync('admin123',  8), 'admin',  999, 2500);
+    insertUser.run('Vinay Kumar',    'member@library.com', bcrypt.hashSync('member123', 8), 'member', 3,   1200);
 
-  const insertCat = db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)');
-  [
-    'Fiction','Non-Fiction','Computer Science','Mathematics',
-    'History','Biography','Science','Technology','Philosophy','Psychology',
-  ].forEach(c => insertCat.run(c));
+    const insertCat = db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)');
+    [
+      'Fiction','Science Fiction','Mystery','Computer Science',
+      'History','Philosophy','Psychology','Science','Technology',
+    ].forEach(c => insertCat.run(c));
+  }
+
+  const bookCount = db.prepare('SELECT COUNT(*) c FROM books').get()?.c || 0;
+  if (bookCount === 0) {
+    const insertBook = db.prepare(`
+      INSERT INTO books (title, author, category, isbn, publisher, year_published, quantity, available_qty, shelf_location, price, cover_url, ebook_link, description, book_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available')
+    `);
+    const seedCatalog = [
+      ['Pride and Prejudice', 'Jane Austen', 'Fiction', 'GUTENBERG-1342', 'T. Egerton', 1813, 4, 4, 'A-12', 249, 'https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg', 'https://www.gutenberg.org/ebooks/1342.html.images', 'A timeless romantic comedy depicting Elizabeth Bennet and Mr. Darcy.'],
+      ['The Great Gatsby', 'F. Scott Fitzgerald', 'Fiction', 'GUTENBERG-64317', "Charles Scribner's Sons", 1925, 3, 3, 'A-15', 299, 'https://www.gutenberg.org/cache/epub/64317/pg64317.cover.medium.jpg', 'https://www.gutenberg.org/ebooks/64317.html.images', 'The story of Jay Gatsby and his passion for Daisy Buchanan in the Jazz Age.'],
+      ['Frankenstein; Or, The Modern Prometheus', 'Mary Shelley', 'Science Fiction', 'GUTENBERG-84', 'Lackington', 1818, 3, 3, 'B-04', 219, 'https://www.gutenberg.org/cache/epub/84/pg84.cover.medium.jpg', 'https://www.gutenberg.org/ebooks/84.html.images', 'The definitive science fiction classic of Victor Frankenstein and his creature.'],
+      ['Dracula', 'Bram Stoker', 'Fiction', 'GUTENBERG-345', 'Constable', 1897, 4, 4, 'B-09', 259, 'https://www.gutenberg.org/cache/epub/345/pg345.cover.medium.jpg', 'https://www.gutenberg.org/ebooks/345.html.images', 'The legendary Gothic horror novel of Count Dracula and Professor Van Helsing.'],
+      ['The Adventures of Sherlock Holmes', 'Arthur Conan Doyle', 'Mystery', 'GUTENBERG-1661', 'George Newnes', 1892, 5, 5, 'M-01', 279, 'https://www.gutenberg.org/cache/epub/1661/pg1661.cover.medium.jpg', 'https://www.gutenberg.org/ebooks/1661.html.images', 'Twelve detective mysteries featuring Sherlock Holmes and Dr. John Watson.'],
+      ['Clean Code: A Handbook of Agile Software Craftsmanship', 'Robert C. Martin', 'Computer Science', '9780132350884', 'Prentice Hall', 2008, 4, 4, 'CS-10', 499, 'https://covers.openlibrary.org/b/isbn/9780132350884-M.jpg', null, 'Essential software craftsmanship principles for writing clean, readable code.'],
+      ['Design Patterns: Elements of Reusable Object-Oriented Software', 'Erich Gamma et al.', 'Computer Science', '9780201633610', 'Addison-Wesley', 1994, 3, 3, 'CS-12', 549, 'https://covers.openlibrary.org/b/isbn/9780201633610-M.jpg', null, 'Foundational catalog of 23 object-oriented software design patterns.'],
+      ['Atomic Habits', 'James Clear', 'Psychology', '9780735211292', 'Avery', 2018, 5, 5, 'PS-08', 350, 'https://covers.openlibrary.org/b/isbn/9780735211292-M.jpg', null, 'Practical framework for building lasting positive habits and continuous improvement.'],
+      ['Meditations', 'Marcus Aurelius', 'Philosophy', 'GUTENBERG-2680', 'Gutenberg', 180, 4, 4, 'P-01', 199, 'https://www.gutenberg.org/cache/epub/2680/pg2680.cover.medium.jpg', 'https://www.gutenberg.org/ebooks/2680.html.images', 'Private reflections on Stoic philosophy, personal discipline, and virtue.'],
+      ['Sapiens: A Brief History of Humankind', 'Yuval Noah Harari', 'History', '9780062316097', 'Harper', 2014, 4, 4, 'H-03', 420, 'https://covers.openlibrary.org/b/isbn/9780062316097-M.jpg', null, 'A sweeping narrative exploring how Homo sapiens conquered planet Earth.']
+    ];
+    seedCatalog.forEach(row => insertBook.run(...row));
+  }
+} catch (e) {
+  console.warn('⚠️ Seeding note:', e.message);
 }
 
 // Ensure default prices and eBook content exist on all books if upgraded
