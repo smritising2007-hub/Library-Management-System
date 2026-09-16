@@ -1,8 +1,17 @@
-const Database = require('better-sqlite3');
-const bcrypt = require('bcryptjs');
-const path = require('path');
+const fs = require('fs');
 
-const db = new Database(path.join(__dirname, 'library.db'));
+let dbPath = path.join(__dirname, 'library.db');
+if (process.env.VERCEL) {
+  const tmpDbPath = '/tmp/library.db';
+  try {
+    if (!fs.existsSync(tmpDbPath) && fs.existsSync(dbPath)) {
+      fs.copyFileSync(dbPath, tmpDbPath);
+    }
+  } catch (_) {}
+  dbPath = tmpDbPath;
+}
+
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

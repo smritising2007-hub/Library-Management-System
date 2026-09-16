@@ -1507,7 +1507,11 @@ app.get('/api/mongo/books', authRequired, async (req, res) => {
   }
 });
 
-// ================== START ==================
-app.listen(PORT, () => console.log(`Library Management System running on http://localhost:${PORT}`));
+// ================== START / EXPORT FOR VERCEL ==================
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+  app.listen(PORT, () => console.log(`Library Management System running on http://localhost:${PORT}`));
+}
+
+module.exports = app;
 
 
