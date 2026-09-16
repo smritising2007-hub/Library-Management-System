@@ -210,7 +210,7 @@ try {
       'INSERT INTO users (name,email,password,role,max_books,wallet_balance) VALUES (?,?,?,?,?,?)'
     );
     insertUser.run('Library Admin',  'admin@library.com',  bcrypt.hashSync('admin123',  8), 'admin',  999, 2500);
-    insertUser.run('Vinay Kumar',    'member@library.com', bcrypt.hashSync('member123', 8), 'member', 3,   1200);
+    insertUser.run('Smriti Singh',   'member@library.com', bcrypt.hashSync('member123', 8), 'member', 3,   1200);
 
     const insertCat = db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)');
     [
