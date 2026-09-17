@@ -1466,10 +1466,12 @@ app.get('/api/admin/database/status', authRequired, adminOnly, async (req, res) 
 });
 
 app.post('/api/admin/database/connect', authRequired, adminOnly, async (req, res) => {
-  const { uri } = req.body;
-  if (!uri) return res.status(400).json({ error: 'MongoDB URI is required' });
+  let { uri } = req.body;
+  if (!uri || uri.includes('****') || uri.trim() === '') {
+    uri = null;
+  }
   try {
-    const conn = await connectMongo(uri.trim());
+    const conn = await connectMongo(uri ? uri.trim() : null);
     const status = await getMongoStatus();
     if (status.is_connected) {
       addAuditLog(req.user.id, req.user.name, 'database_connect', 'mongodb', null, { uri: status.uri });
@@ -1483,7 +1485,10 @@ app.post('/api/admin/database/connect', authRequired, adminOnly, async (req, res
 });
 
 app.post('/api/admin/database/migrate', authRequired, adminOnly, async (req, res) => {
-  const { dry_run = false, uri } = req.body;
+  let { dry_run = false, uri } = req.body;
+  if (!uri || uri.includes('****') || uri.trim() === '') {
+    uri = undefined;
+  }
   try {
     const result = await migrateSqliteToMongo({ dryRun: dry_run, mongoUri: uri });
     addAuditLog(req.user.id, req.user.name, 'database_migration', 'mongodb', null, result);

@@ -4236,7 +4236,7 @@ async function loadDatabaseSettings(){
     const sq = data.sqlite;
 
     if (uriInp && !uriInp.value && mg.uri) {
-      uriInp.value = mg.uri;
+      uriInp.placeholder = mg.uri;
     }
 
     if (mg.is_connected) {
@@ -4277,12 +4277,9 @@ async function loadDatabaseSettings(){
 }
 
 async function saveAndConnectMongo(){
-  const uri = document.getElementById('cfg-mongo-uri')?.value.trim();
+  const rawInput = document.getElementById('cfg-mongo-uri')?.value.trim();
   const resEl = document.getElementById('db-action-result');
-  if (!uri) {
-    toast('Please enter a MongoDB connection URI', 'err');
-    return;
-  }
+  const uri = (rawInput && !rawInput.includes('****')) ? rawInput : undefined;
 
   if (resEl) {
     resEl.style.color = 'var(--muted)';
@@ -4313,7 +4310,8 @@ async function saveAndConnectMongo(){
 
 async function runMongoMigration(dryRun = false){
   const resEl = document.getElementById('db-action-result');
-  const uri = document.getElementById('cfg-mongo-uri')?.value.trim();
+  const rawInput = document.getElementById('cfg-mongo-uri')?.value.trim();
+  const uri = (rawInput && !rawInput.includes('****')) ? rawInput : undefined;
 
   if (resEl) {
     resEl.style.color = 'var(--muted)';
@@ -4323,7 +4321,7 @@ async function runMongoMigration(dryRun = false){
   try {
     const res = await api('/admin/database/migrate', {
       method: 'POST',
-      body: JSON.stringify({ dry_run: dryRun, uri: uri || undefined })
+      body: JSON.stringify({ dry_run: dryRun, uri: uri })
     });
 
     if (res.success) {
