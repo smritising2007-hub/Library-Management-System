@@ -4,8 +4,10 @@ let isConnected = false;
 let connectionError = null;
 let lastPingMs = null;
 
+const DEFAULT_MONGO_URI = 'mongodb+srv://vinaysingh639042_db_user:eGa1OXL2FZ7BOdx4@cluster0.asiaecy.mongodb.net/library_management?retryWrites=true&w=majority&appName=Cluster0';
+
 async function connectMongo(customUri = null) {
-  const uri = customUri || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/library_management';
+  const uri = customUri || process.env.MONGODB_URI || DEFAULT_MONGO_URI;
   
   if (mongoose.connection.readyState === 1) {
     isConnected = true;
@@ -77,7 +79,7 @@ async function getMongoStatus() {
     }
   }
 
-  const rawUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/library_management';
+  const rawUri = process.env.MONGODB_URI || DEFAULT_MONGO_URI;
   const maskedUri = rawUri.replace(/:([^:@]+)@/, ':****@');
 
   return {

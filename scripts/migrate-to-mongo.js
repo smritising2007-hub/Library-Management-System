@@ -21,7 +21,8 @@ const {
 
 async function migrateSqliteToMongo(options = {}) {
   const sqliteDbPath = options.sqliteDbPath || path.join(__dirname, '../db/library.db');
-  const mongoUri = options.mongoUri || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/library_management';
+  const defaultUri = 'mongodb+srv://vinaysingh639042_db_user:eGa1OXL2FZ7BOdx4@cluster0.asiaecy.mongodb.net/library_management?retryWrites=true&w=majority&appName=Cluster0';
+  const mongoUri = options.mongoUri || process.env.MONGODB_URI || defaultUri;
   const dryRun = !!options.dryRun;
 
   console.log('🚀 Starting SQLite to MongoDB Migration...');
