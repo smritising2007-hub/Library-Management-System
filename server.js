@@ -61,6 +61,9 @@ app.post('/api/auth/register', async (req, res) => {
 
   const normalizedEmail = email.toLowerCase().trim();
 
+  // Ensure MongoDB is connected first
+  await connectMongo().catch(() => {});
+
   // Check SQLite
   const existingSqlite = db.prepare('SELECT id FROM users WHERE LOWER(email)=?').get(normalizedEmail);
   if (existingSqlite)
@@ -80,7 +83,7 @@ app.post('/api/auth/register', async (req, res) => {
 
   // Synchronize immediately to MongoDB
   try {
-    if (getIsConnected() && mongoModels.User) {
+    if (mongoModels.User) {
       await mongoModels.User.findOneAndUpdate(
         { email: normalizedEmail },
         { sqlite_id: info.lastInsertRowid, name, email: normalizedEmail, password: hashedPassword, role: 'member', max_books: 3 },
@@ -105,15 +108,18 @@ app.post('/api/auth/login', async (req, res) => {
   let user = db.prepare('SELECT * FROM users WHERE LOWER(email)=?').get(normalizedEmail);
 
   // Fallback to MongoDB if user registered on another instance / cloud
-  if (!user && getIsConnected() && mongoModels.User) {
+  if (!user) {
     try {
-      const mUser = await mongoModels.User.findOne({ email: normalizedEmail });
-      if (mUser) {
-        // Sync to local SQLite
-        const info = db.prepare(
-          "INSERT OR REPLACE INTO users (name,email,password,role,max_books) VALUES (?,?,?,?,?)"
-        ).run(mUser.name, mUser.email, mUser.password, mUser.role || 'member', mUser.max_books || 3);
-        user = { id: info.lastInsertRowid, name: mUser.name, email: mUser.email, password: mUser.password, role: mUser.role || 'member' };
+      await connectMongo().catch(() => {});
+      if (mongoModels.User) {
+        const mUser = await mongoModels.User.findOne({ email: normalizedEmail });
+        if (mUser) {
+          // Sync to local SQLite
+          const info = db.prepare(
+            "INSERT OR REPLACE INTO users (name,email,password,role,max_books) VALUES (?,?,?,?,?)"
+          ).run(mUser.name, mUser.email, mUser.password, mUser.role || 'member', mUser.max_books || 3);
+          user = { id: info.lastInsertRowid, name: mUser.name, email: mUser.email, password: mUser.password, role: mUser.role || 'member' };
+        }
       }
     } catch (_) {}
   }
@@ -1013,10 +1019,12 @@ app.get('/api/members', authRequired, adminOnly, async (req, res) => {
   const safe = (s) => s ? s.replace(/'/g,"''") : '';
 
   // First sync any newly registered members from MongoDB into local SQLite
-  if (getIsConnected() && mongoModels.User) {
-    try {
+  try {
+    await connectMongo().catch(() => {});
+    if (mongoModels.User) {
       const mUsers = await mongoModels.User.find({ role: 'member' }).lean();
       for (const mu of mUsers) {
+        if (!mu.email) continue;
         const exist = db.prepare('SELECT id FROM users WHERE LOWER(email)=?').get(mu.email.toLowerCase());
         if (!exist) {
           db.prepare(
@@ -1024,7 +1032,9 @@ app.get('/api/members', authRequired, adminOnly, async (req, res) => {
           ).run(mu.name, mu.email, mu.password || 'cloud_user', 'member', mu.max_books || 3, mu.created_at ? new Date(mu.created_at).toISOString().slice(0, 19).replace('T', ' ') : todayStr());
         }
       }
-    } catch (_) {}
+    }
+  } catch (err) {
+    console.warn('Sync members warning:', err.message);
   }
 
   let sql = `
@@ -1049,7 +1059,8 @@ app.post('/api/members', authRequired, adminOnly, async (req, res) => {
   ).run(name, email, hashedPassword, max_books||3, phone||null);
 
   try {
-    if (getIsConnected() && mongoModels.User) {
+    await connectMongo().catch(() => {});
+    if (mongoModels.User) {
       await mongoModels.User.findOneAndUpdate(
         { email: email.toLowerCase() },
         { sqlite_id: info.lastInsertRowid, name, email: email.toLowerCase(), password: hashedPassword, role: 'member', max_books: max_books||3, phone: phone||null },
