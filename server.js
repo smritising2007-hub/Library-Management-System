@@ -58,34 +58,65 @@ app.post('/api/auth/register', async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password)
     return res.status(400).json({ error: 'name, email, password required' });
-  if (db.prepare('SELECT id FROM users WHERE email=?').get(email))
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Check SQLite
+  const existingSqlite = db.prepare('SELECT id FROM users WHERE LOWER(email)=?').get(normalizedEmail);
+  if (existingSqlite)
     return res.status(409).json({ error: 'Email already registered' });
+
+  // Check MongoDB if connected
+  if (getIsConnected() && mongoModels.User) {
+    const existingMongo = await mongoModels.User.findOne({ email: normalizedEmail }).catch(() => null);
+    if (existingMongo)
+      return res.status(409).json({ error: 'Email already registered' });
+  }
+
   const hashedPassword = bcrypt.hashSync(password, 8);
   const info = db.prepare(
     "INSERT INTO users (name,email,password,role,max_books) VALUES (?,?,?,'member',3)"
-  ).run(name, email, hashedPassword);
+  ).run(name, normalizedEmail, hashedPassword);
 
-  // Synchronize to MongoDB
+  // Synchronize immediately to MongoDB
   try {
     if (getIsConnected() && mongoModels.User) {
       await mongoModels.User.findOneAndUpdate(
-        { email: email.toLowerCase() },
-        { sqlite_id: info.lastInsertRowid, name, email: email.toLowerCase(), password: hashedPassword, role: 'member', max_books: 3 },
-        { upsert: true }
+        { email: normalizedEmail },
+        { sqlite_id: info.lastInsertRowid, name, email: normalizedEmail, password: hashedPassword, role: 'member', max_books: 3 },
+        { upsert: true, new: true }
       );
     }
   } catch (err) {
     console.warn('MongoDB user sync warning:', err.message);
   }
 
-  res.json({ id: info.lastInsertRowid, name, email, role: 'member' });
+  res.json({ id: info.lastInsertRowid, name, email: normalizedEmail, role: 'member' });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+  const normalizedEmail = (email || '').toLowerCase().trim();
+
+  let user = db.prepare('SELECT * FROM users WHERE LOWER(email)=?').get(normalizedEmail);
+
+  // Fallback to MongoDB if user registered on another instance / cloud
+  if (!user && getIsConnected() && mongoModels.User) {
+    try {
+      const mUser = await mongoModels.User.findOne({ email: normalizedEmail });
+      if (mUser) {
+        // Sync to local SQLite
+        const info = db.prepare(
+          "INSERT OR REPLACE INTO users (name,email,password,role,max_books) VALUES (?,?,?,?,?)"
+        ).run(mUser.name, mUser.email, mUser.password, mUser.role || 'member', mUser.max_books || 3);
+        user = { id: info.lastInsertRowid, name: mUser.name, email: mUser.email, password: mUser.password, role: mUser.role || 'member' };
+      }
+    } catch (_) {}
+  }
+
   if (!user || !bcrypt.compareSync(password, user.password))
     return res.status(401).json({ error: 'Invalid email or password' });
+
   const token = jwt.sign(
     { id: user.id, name: user.name, email: user.email, role: user.role },
     JWT_SECRET, { expiresIn: '12h' }
@@ -973,9 +1004,25 @@ app.get('/api/transactions', authRequired, adminOnly, (req, res) => {
 });
 
 // ================== MEMBERS ==================
-app.get('/api/members', authRequired, adminOnly, (req, res) => {
+app.get('/api/members', authRequired, adminOnly, async (req, res) => {
   const { q } = req.query;
   const safe = (s) => s ? s.replace(/'/g,"''") : '';
+
+  // First sync any newly registered members from MongoDB into local SQLite
+  if (getIsConnected() && mongoModels.User) {
+    try {
+      const mUsers = await mongoModels.User.find({ role: 'member' }).lean();
+      for (const mu of mUsers) {
+        const exist = db.prepare('SELECT id FROM users WHERE LOWER(email)=?').get(mu.email.toLowerCase());
+        if (!exist) {
+          db.prepare(
+            "INSERT INTO users (name,email,password,role,max_books,created_at) VALUES (?,?,?,?,?,?)"
+          ).run(mu.name, mu.email, mu.password || 'cloud_user', 'member', mu.max_books || 3, mu.created_at ? new Date(mu.created_at).toISOString().slice(0, 19).replace('T', ' ') : todayStr());
+        }
+      }
+    } catch (_) {}
+  }
+
   let sql = `
     SELECT u.id,u.name,u.email,u.role,u.max_books,u.created_at,u.phone,
       (SELECT COUNT(*) FROM transactions t WHERE t.user_id=u.id AND t.status='issued') AS active_loans,
