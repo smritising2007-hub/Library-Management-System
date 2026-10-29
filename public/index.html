@@ -1421,10 +1421,47 @@ document.getElementById('auth-overlay').addEventListener('click', e => {
   if (e.target.id === 'auth-overlay') closeAuthModal();
 });
 
+function updateLandingAuthButtons(){
+  const signinBtn = document.getElementById('lp-signin-btn');
+  const enterBtn = document.getElementById('lp-enter-btn');
+  if (state.token && state.user){
+    if (signinBtn) signinBtn.textContent = 'Dashboard (' + (state.user.name.split(' ')[0] || 'User') + ')';
+    if (enterBtn) {
+      const enterSpan = enterBtn.querySelector('span');
+      if (enterSpan) enterSpan.textContent = 'Open Dashboard';
+    }
+  } else {
+    if (signinBtn) signinBtn.textContent = 'Sign In';
+    if (enterBtn) {
+      const enterSpan = enterBtn.querySelector('span');
+      if (enterSpan) enterSpan.textContent = 'Enter Library';
+    }
+  }
+}
+
 // Nav / CTA buttons on landing
-document.getElementById('lp-signin-btn').onclick = () => openAuthModal('login');
-document.getElementById('lp-enter-btn').onclick  = () => openAuthModal('login');
-document.getElementById('lp-view-all-btn').onclick = () => openAuthModal('login');
+document.getElementById('lp-signin-btn').onclick = () => {
+  if (state.token && state.user) {
+    enterApp();
+  } else {
+    openAuthModal('login');
+  }
+};
+document.getElementById('lp-enter-btn').onclick = () => {
+  if (state.token && state.user) {
+    enterApp();
+  } else {
+    openAuthModal('login');
+  }
+};
+document.getElementById('lp-view-all-btn').onclick = () => {
+  if (state.token && state.user) {
+    enterApp();
+    navigate('books');
+  } else {
+    openAuthModal('login');
+  }
+};
 
 // Newsletter subscribe (landing)
 function lpSubscribe(e){
@@ -1789,14 +1826,23 @@ document.getElementById('register-form').onsubmit = async e => {
   e.preventDefault();
   document.getElementById('auth-error').style.display='none';
   try {
-    await api('/auth/register',{method:'POST',body:JSON.stringify({
+    const data = await api('/auth/register',{method:'POST',body:JSON.stringify({
       name:document.getElementById('reg-name').value,
       email:document.getElementById('reg-email').value,
       password:document.getElementById('reg-password').value
     })});
-    toast('Account created — please sign in','ok');
-    document.getElementById('switch-to-login').click();
-    document.getElementById('login-email').value=document.getElementById('reg-email').value;
+    toast('Account created successfully!','ok');
+    if (data.token && data.user) {
+      state.token = data.token;
+      state.user = data.user;
+      localStorage.setItem('lms_token', data.token);
+      localStorage.setItem('lms_user', JSON.stringify(data.user));
+      closeAuthModal();
+      enterApp();
+    } else {
+      document.getElementById('switch-to-login').click();
+      document.getElementById('login-email').value=document.getElementById('reg-email').value;
+    }
   } catch(err){ const e=document.getElementById('auth-error'); e.textContent=err.message; e.style.display='block'; }
 };
 document.getElementById('logout-btn').onclick = () => {
@@ -1805,6 +1851,7 @@ document.getElementById('logout-btn').onclick = () => {
   document.getElementById('app-screen').style.display='none';
   document.getElementById('landing-screen').style.display='block';
   document.body.style.background = '#ccd5ae';
+  updateLandingAuthButtons();
 };
 
 // ===================== ENTER APP =====================
@@ -4347,7 +4394,14 @@ async function runMongoMigration(dryRun = false){
 document.addEventListener('DOMContentLoaded', () => {
   initLandingScrollEffects();
   loadLandingBooks();
-  document.body.style.background = '#ccd5ae';
+  updateLandingAuthButtons();
+
+  // If user already logged in, resume app dashboard on browser refresh
+  if (state.token && state.user) {
+    enterApp();
+  } else {
+    document.body.style.background = '#ccd5ae';
+  }
 });
 </script>
 </body>

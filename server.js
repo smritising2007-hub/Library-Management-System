@@ -91,7 +91,11 @@ app.post('/api/auth/register', async (req, res) => {
     console.warn('MongoDB user sync warning:', err.message);
   }
 
-  res.json({ id: info.lastInsertRowid, name, email: normalizedEmail, role: 'member' });
+  const token = jwt.sign(
+    { id: info.lastInsertRowid, name, email: normalizedEmail, role: 'member' },
+    JWT_SECRET, { expiresIn: '12h' }
+  );
+  res.json({ token, user: { id: info.lastInsertRowid, name, email: normalizedEmail, role: 'member' } });
 });
 
 app.post('/api/auth/login', async (req, res) => {
