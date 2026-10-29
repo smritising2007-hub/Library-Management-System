@@ -54,15 +54,30 @@ function notify(userId, message, type = 'info') {
 }
 
 // ================== AUTH ==================
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password)
     return res.status(400).json({ error: 'name, email, password required' });
   if (db.prepare('SELECT id FROM users WHERE email=?').get(email))
     return res.status(409).json({ error: 'Email already registered' });
+  const hashedPassword = bcrypt.hashSync(password, 8);
   const info = db.prepare(
     "INSERT INTO users (name,email,password,role,max_books) VALUES (?,?,?,'member',3)"
-  ).run(name, email, bcrypt.hashSync(password, 8));
+  ).run(name, email, hashedPassword);
+
+  // Synchronize to MongoDB
+  try {
+    if (getIsConnected() && mongoModels.User) {
+      await mongoModels.User.findOneAndUpdate(
+        { email: email.toLowerCase() },
+        { sqlite_id: info.lastInsertRowid, name, email: email.toLowerCase(), password: hashedPassword, role: 'member', max_books: 3 },
+        { upsert: true }
+      );
+    }
+  } catch (err) {
+    console.warn('MongoDB user sync warning:', err.message);
+  }
+
   res.json({ id: info.lastInsertRowid, name, email, role: 'member' });
 });
 
@@ -972,14 +987,28 @@ app.get('/api/members', authRequired, adminOnly, (req, res) => {
   res.json(db.prepare(sql).all());
 });
 
-app.post('/api/members', authRequired, adminOnly, (req, res) => {
+app.post('/api/members', authRequired, adminOnly, async (req, res) => {
   const { name, email, password, max_books, phone } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'name, email, password required' });
   if (db.prepare('SELECT id FROM users WHERE email=?').get(email))
     return res.status(409).json({ error: 'Email already registered' });
+  const hashedPassword = bcrypt.hashSync(password, 8);
   const info = db.prepare(
     "INSERT INTO users (name,email,password,role,max_books,phone) VALUES (?,?,?,'member',?,?)"
-  ).run(name, email, bcrypt.hashSync(password, 8), max_books||3, phone||null);
+  ).run(name, email, hashedPassword, max_books||3, phone||null);
+
+  try {
+    if (getIsConnected() && mongoModels.User) {
+      await mongoModels.User.findOneAndUpdate(
+        { email: email.toLowerCase() },
+        { sqlite_id: info.lastInsertRowid, name, email: email.toLowerCase(), password: hashedPassword, role: 'member', max_books: max_books||3, phone: phone||null },
+        { upsert: true }
+      );
+    }
+  } catch (err) {
+    console.warn('MongoDB user sync warning:', err.message);
+  }
+
   addAuditLog(req.user.id, req.user.name, 'ADD_MEMBER', 'user', info.lastInsertRowid, { name, email });
   res.json({ id: info.lastInsertRowid });
 });
