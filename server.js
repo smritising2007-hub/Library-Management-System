@@ -1216,31 +1216,94 @@ app.get('/api/reports/export/csv', authRequired, adminOnly, (req, res) => {
 });
 
 // ================== WALLET ==================
-app.get('/api/wallet', authRequired, (req, res) => {
+app.get('/api/wallet', authRequired, async (req, res) => {
+  try {
+    await connectMongo().catch(() => {});
+    if (mongoModels.User) {
+      const mUser = await mongoModels.User.findOne({ email: req.user.email.toLowerCase() });
+      if (mUser && mUser.wallet_balance !== undefined) {
+        db.prepare('UPDATE users SET wallet_balance=? WHERE id=?').run(mUser.wallet_balance, req.user.id);
+      }
+    }
+  } catch (_) {}
+
   const user = db.prepare('SELECT wallet_balance FROM users WHERE id=?').get(req.user.id);
   const balance = user ? (user.wallet_balance || 0) : 0;
   const transactions = db.prepare('SELECT * FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 50').all(req.user.id);
   res.json({ balance, transactions });
 });
 
-app.post('/api/wallet/add-funds', authRequired, (req, res) => {
+app.post('/api/wallet/add-funds', authRequired, async (req, res) => {
   const amount = parseInt(req.body.amount);
   if (!amount || amount <= 0) return res.status(400).json({ error: 'Valid positive amount required' });
+
+  // Update SQLite
   db.prepare('UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + ? WHERE id=?').run(amount, req.user.id);
-  db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(req.user.id, 'credit', amount, 'Wallet Recharge / Top-up');
+  const info = db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(req.user.id, 'credit', amount, req.body.description || 'Wallet Recharge / Top-up');
   const user = db.prepare('SELECT wallet_balance FROM users WHERE id=?').get(req.user.id);
+
+  // Sync to MongoDB Cloud
+  try {
+    await connectMongo().catch(() => {});
+    if (mongoModels.User) {
+      const mUser = await mongoModels.User.findOneAndUpdate(
+        { email: req.user.email.toLowerCase() },
+        { $inc: { wallet_balance: amount } },
+        { new: true }
+      );
+      if (mUser && mongoModels.WalletTransaction) {
+        await mongoModels.WalletTransaction.create({
+          sqlite_id: info.lastInsertRowid,
+          user: mUser._id,
+          sqlite_user_id: req.user.id,
+          type: 'credit',
+          amount,
+          reason: req.body.description || 'Wallet Recharge / Top-up'
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('MongoDB wallet sync warning:', err.message);
+  }
+
   notify(req.user.id, `₹${amount} successfully added to your wallet! New balance: ₹${user.wallet_balance}`, 'success');
   addAuditLog(req.user.id, req.user.name, 'WALLET_TOPUP', 'wallet', req.user.id, { amount, new_balance: user.wallet_balance });
   res.json({ success: true, balance: user.wallet_balance });
 });
 
-app.get('/api/wallet/transactions', authRequired, (req, res) => {
+app.get('/api/wallet/transactions', authRequired, async (req, res) => {
+  try {
+    await connectMongo().catch(() => {});
+    if (mongoModels.WalletTransaction && mongoModels.User) {
+      const mUser = await mongoModels.User.findOne({ email: req.user.email.toLowerCase() });
+      if (mUser) {
+        const mtxs = await mongoModels.WalletTransaction.find({ user: mUser._id }).sort({ created_at: -1 }).limit(100).lean();
+        for (const mt of mtxs) {
+          const exist = db.prepare('SELECT id FROM wallet_transactions WHERE user_id=? AND amount=? AND created_at=?').get(
+            req.user.id,
+            mt.amount,
+            new Date(mt.created_at).toISOString().slice(0, 19).replace('T', ' ')
+          );
+          if (!exist) {
+            db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason, created_at) VALUES (?, ?, ?, ?, ?)').run(
+              req.user.id,
+              mt.type,
+              mt.amount,
+              mt.reason,
+              new Date(mt.created_at).toISOString().slice(0, 19).replace('T', ' ')
+            );
+          }
+        }
+      }
+    }
+  } catch (_) {}
+
   const rows = db.prepare('SELECT * FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 100').all(req.user.id);
   res.json(rows);
 });
 
 // ================== BUY FROM LIBRARY ==================
-app.post('/api/books/:id/buy', authRequired, (req, res) => {
+app.post('/api/books/:id/buy', authRequired, async (req, res) => {
   const bookId = parseInt(req.params.id);
   const book = db.prepare('SELECT * FROM books WHERE id=?').get(bookId);
   if (!book) return res.status(404).json({ error: 'Book not found' });
@@ -1254,7 +1317,31 @@ app.post('/api/books/:id/buy', authRequired, (req, res) => {
 
   // Deduct from wallet
   db.prepare('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?').run(price, req.user.id);
-  db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(req.user.id, 'debit', price, `Purchased: ${book.title}`);
+  const pTxInfo = db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(req.user.id, 'debit', price, `Purchased: ${book.title}`);
+
+  // Sync to MongoDB
+  try {
+    await connectMongo().catch(() => {});
+    if (mongoModels.User) {
+      const mUser = await mongoModels.User.findOneAndUpdate(
+        { email: req.user.email.toLowerCase() },
+        { $inc: { wallet_balance: -price } },
+        { new: true }
+      );
+      if (mUser && mongoModels.WalletTransaction) {
+        await mongoModels.WalletTransaction.create({
+          sqlite_id: pTxInfo.lastInsertRowid,
+          user: mUser._id,
+          sqlite_user_id: req.user.id,
+          type: 'debit',
+          amount: price,
+          reason: `Purchased: ${book.title}`
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('MongoDB buy sync warning:', err.message);
+  }
 
   // Create purchase record
   const pInfo = db.prepare(`
@@ -1339,7 +1426,7 @@ app.post('/api/marketplace', authRequired, (req, res) => {
   res.json({ success: true, id: info.lastInsertRowid });
 });
 
-app.post('/api/marketplace/:id/buy', authRequired, (req, res) => {
+app.post('/api/marketplace/:id/buy', authRequired, async (req, res) => {
   const itemId = parseInt(req.params.id);
   const item = db.prepare('SELECT * FROM marketplace_books WHERE id=?').get(itemId);
   if (!item || item.status !== 'active') {
@@ -1357,11 +1444,31 @@ app.post('/api/marketplace/:id/buy', authRequired, (req, res) => {
 
   // 1. Deduct from buyer
   db.prepare('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?').run(item.price, req.user.id);
-  db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(req.user.id, 'debit', item.price, `Marketplace purchase: ${item.title}`);
+  const buyerTx = db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(req.user.id, 'debit', item.price, `Marketplace purchase: ${item.title}`);
 
   // 2. Credit to seller
   db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id=?').run(item.price, item.seller_id);
-  db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(item.seller_id, 'credit', item.price, `Book sold on Marketplace: ${item.title}`);
+  const sellerTx = db.prepare('INSERT INTO wallet_transactions (user_id, type, amount, reason) VALUES (?, ?, ?, ?)').run(item.seller_id, 'credit', item.price, `Book sold on Marketplace: ${item.title}`);
+
+  // Sync to MongoDB Cloud
+  try {
+    await connectMongo().catch(() => {});
+    if (mongoModels.User) {
+      const sellerUser = db.prepare('SELECT email FROM users WHERE id=?').get(item.seller_id);
+      await mongoModels.User.findOneAndUpdate(
+        { email: req.user.email.toLowerCase() },
+        { $inc: { wallet_balance: -item.price } }
+      );
+      if (sellerUser && sellerUser.email) {
+        await mongoModels.User.findOneAndUpdate(
+          { email: sellerUser.email.toLowerCase() },
+          { $inc: { wallet_balance: item.price } }
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('MongoDB marketplace wallet sync warning:', err.message);
+  }
 
   // 3. Mark sold
   db.prepare("UPDATE marketplace_books SET status='sold', buyer_id=?, sold_at=datetime('now') WHERE id=?").run(req.user.id, itemId);

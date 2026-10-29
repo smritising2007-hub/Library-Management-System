@@ -3089,8 +3089,8 @@ async function renderWallet(){
                     <td class="text-muted">${fmtDate(t.created_at)}</td>
                     <td><span class="tag ${t.type==='credit'?'ok':'overdue'}">${t.type.toUpperCase()}</span></td>
                     <td><strong style="color:${t.type==='credit'?'var(--ok)':'var(--danger)'}">${t.type==='credit'?'+':'-'}₹${t.amount}</strong></td>
-                    <td>${esc(t.description)}</td>
-                    <td class="font-mono text-muted" style="font-size:11.5px">${esc(t.reference||'—')}</td>
+                    <td>${esc(t.reason || t.description || 'Wallet Transaction')}</td>
+                    <td class="font-mono text-muted" style="font-size:11.5px">${esc(t.reference||'#TX-'+t.id)}</td>
                   </tr>
                 `).join('')}
               </tbody>
