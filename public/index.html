@@ -4342,20 +4342,11 @@ async function runMongoMigration(dryRun = false){
     }
     toast(e.message, 'err');
   }
-}
-
 document.addEventListener('DOMContentLoaded', () => {
   initLandingScrollEffects();
   loadLandingBooks();
-});
-
-if (state.token && state.user) {
-  // Already logged in — skip landing, go straight to app
-  document.getElementById('landing-screen').style.display = 'none';
-  enterApp();
-} else {
   document.body.style.background = '#ccd5ae';
-}
+});
 </script>
 </body>
 </html>
