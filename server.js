@@ -1500,7 +1500,7 @@ app.get('/api/audit', authRequired, adminOnly, (req, res) => {
 });
 
 // ================== DATABASE & MONGODB ADMINISTRATION ==================
-app.get('/api/admin/database/status', authRequired, adminOnly, async (req, res) => {
+app.get('/api/admin/database/status', authRequired, async (req, res) => {
   try {
     const mongoStatus = await getMongoStatus();
     
